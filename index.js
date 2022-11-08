@@ -1,5 +1,4 @@
 const playwright = require("playwright");
-const { cookie } = require("request");
 const baseSearchUrl = "https://www.ebi.ac.uk/chembl/g/#search_results/targets/query=";
 
 async function main() {
