@@ -1,23 +1,33 @@
+const Utils = require("./utils");
+
 const playwright = require("playwright");
-const baseSearchUrl = "https://www.ebi.ac.uk/chembl/g/#search_results/targets/query=";
+const baseSearchUrl =
+  "https://www.ebi.ac.uk/chembl/g/#search_results/targets/query=";
 
 async function main() {
   const browser = await playwright.chromium.launch({
     headless: false, // setting this to true will not run the UI
   });
 
-  const keyword = 'Aldose reductase';
-  const page = await browser.newPage();
-  const ids = await fetchIdsByKeyword(page, keyword);
-  console.log(ids)
+  const keyword = "Aldose reductase";
+  console.log(`Keyword: ${keyword}`);
 
-  ids.forEach(async (id) => {
+  const page = await browser.newPage();
+
+  const ids = await fetchIdsByKeyword(page, keyword);
+  console.log(ids);
+  console.log('Stop searching due to empty results. Please try to run again!');
+
+  for await (const id of ids) {
+    console.log(`Starting download id: ${id}`);
     const context = await browser.newContext({ acceptDownloads: true });
     const page = await context.newPage();
     await downloadFileById(page, id);
-  });
+    await Utils.sleep(1000);
+    console.log(`Finished download id: ${id}`);
+  }
 
-  // await browser.close();
+  await browser.close();
 }
 
 main().catch((error) => {
@@ -26,18 +36,26 @@ main().catch((error) => {
 });
 
 async function downloadFileById(page, id) {
-  url = `https://www.ebi.ac.uk/chembl/g/#browse/activities/filter/target_chembl_id:${id}`
+  url = `https://www.ebi.ac.uk/chembl/g/#browse/activities/filter/target_chembl_id:${id}`;
   await page.goto(url);
-  await page.waitForSelector('div .BCK-MenuContainer');
+  await page.waitForSelector("div .BCK-MenuContainer");
   // Click CSV button
-  const downloadBtn = await page.waitForSelector('[data-format=CSV]');
+  const downloadBtn = await page.waitForSelector("[data-format=CSV]");
   await downloadBtn.click();
+  await Utils.sleep(500);
 
-  await page.waitForSelector('div[data-hb-template=Handlebars-Common-DownloadLink] a');
+  await page.waitForSelector(
+    "div[data-hb-template=Handlebars-Common-DownloadLink] a"
+  );
+  await Utils.sleep(500);
   // Click "Click here" button
-  const [ download ] = await Promise.all([
-    page.waitForEvent('download'),
-    page.click('div[data-hb-template=Handlebars-Common-DownloadLink] a')
+  let downloadLocator = page
+    .locator("div[data-hb-template=Handlebars-Common-DownloadLink] a")
+    .first();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    Utils.sleep(1000),
+    downloadLocator.click(),
   ]);
   // wait for download to complete
   const path = await download.path();
@@ -47,6 +65,8 @@ async function downloadFileById(page, id) {
   // wait for the download and delete the temporary file
   await download.delete();
   console.log(`Downloaded ${id} in ${filePath}`);
+
+  await page.close();
 }
 
 async function fetchIdsByKeyword(page, keyword) {
@@ -61,18 +81,20 @@ async function fetchIdsByKeyword(page, keyword) {
 
   const rows = await page.$eval("#ESTarget tbody", (tableBody) => {
     let all = [];
-    for (let i = 0, row; row = tableBody.rows[i]; i++) {
+    for (let i = 0, row; (row = tableBody.rows[i]); i++) {
       let data = [];
-      for (let j = 0, col; col = row.cells[j]; j++) {
-        data.push(row.cells[j].innerText)
+      for (let j = 0, col; (col = row.cells[j]); j++) {
+        data.push(row.cells[j].innerText);
       }
-      all.push(data)
+      all.push(data);
     }
     return all;
   });
 
   console.log("Filtering valid row......");
-  const validRows = rows.filter((row) => row[3].toLowerCase() === keyword.toLowerCase());
+  const validRows = rows.filter(
+    (row) => row[3].toLowerCase() === keyword.toLowerCase()
+  );
   console.log("Selecting chembl ids.........");
   const ids = validRows.map((row) => {
     return row[1];
